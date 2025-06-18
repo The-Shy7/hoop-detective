@@ -1,6 +1,9 @@
 package main
 
-// Package for time-related operations
+import (
+	"math/rand" // Package for generating random numbers
+	"time"      // Package for time-related operations
+)
 
 // Player represents an NBA player with all their relevant attributes for the guessing game
 type Player struct {
@@ -22,21 +25,57 @@ var players []Player
 
 // initializePlayers loads player data from the NBA API or falls back to hardcoded data
 func initializePlayers() error {
-	panic("not implemented")
+	// First attempt to fetch comprehensive player data from NBA API
+	apiPlayers, err := fetchAllPlayers()
+	if err != nil {
+		// If API fails, use the fallback dataset of notable players
+		players = getFallbackPlayers()
+		return nil // Return nil since fallback is successful
+	}
+
+	// If API succeeds, use the fetched data
+	players = apiPlayers
+	return nil
 }
 
 // getRandomPlayer selects and returns a random player from the loaded dataset
 func getRandomPlayer() Player {
-	panic("not implemented")
+	// Ensure players are initialized before selecting random player
+	if len(players) == 0 {
+		initializePlayers() // Initialize if not already done
+	}
+
+	// Seed the random number generator with current time for true randomness
+	rand.Seed(time.Now().UnixNano())
+
+	// Return a random player from the slice
+	return players[rand.Intn(len(players))]
 }
 
 // findPlayerByName searches for a player by exact name match
 // Returns pointer to player and boolean indicating if found
 func findPlayerByName(name string) (*Player, bool) {
-	panic("not implemented")
+	// Iterate through all players in the database
+	for _, player := range players {
+		// Check for exact name match (case-sensitive)
+		if player.Name == name {
+			return &player, true // Return pointer to player and true if found
+		}
+	}
+	// Return nil pointer and false if player not found
+	return nil, false
 }
 
 // getAllPlayerNames returns a slice containing all player names in the database
 func getAllPlayerNames() []string {
-	panic("not implemented")
+	// Create slice with capacity equal to number of players
+	names := make([]string, len(players))
+
+	// Extract name from each player and add to names slice
+	for i, player := range players {
+		names[i] = player.Name
+	}
+
+	// Return the complete list of player names
+	return names
 }
