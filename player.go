@@ -7,17 +7,16 @@ import (
 
 // Player represents an NBA player with all their relevant attributes for the guessing game
 type Player struct {
-	Name        string   // Full name of the player (e.g., "LeBron James")
-	Team        string   // Current team or "Retired" for former players
-	Position    string   // Playing position (PG, SG, SF, PF, C)
-	Height      string   // Player height in feet and inches (e.g., "6'9\"")
-	College     string   // College attended or "None" for international/high school players
-	DraftYear   int      // Year the player was drafted into the NBA
-	PPG         float64  // Career points per game average
-	RPG         float64  // Career rebounds per game average
-	APG         float64  // Career assists per game average
-	Accolades   []string // List of major achievements (championships, awards, etc.)
-	TeamHistory []string // List of all teams the player has played for
+	Name         string // Full name of the player (e.g., "LeBron James")
+	Team         string // Current team or "Retired" for former players
+	Position     string // Playing position (PG, SG, SF, PF, C)
+	Height       string // Player height in feet and inches (e.g., "6'9\"")
+	College      string // College attended or "None" for international/high school players
+	DraftYear    int    // Year the player was drafted into the NBA
+	DraftRound   int    // Round the player was drafted in (1-2, or 0 for undrafted)
+	DraftNumber  int    // Overall pick number in the draft (1-60, or 0 for undrafted)
+	JerseyNumber string // Current jersey number (or "Unknown" if not available)
+	Country      string // Country of origin
 }
 
 // Global variable to store all loaded players

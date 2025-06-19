@@ -7,24 +7,23 @@ import (
 
 // ComparisonResult holds the formatted comparison results between guess and target player
 type ComparisonResult struct {
-	Name        string // Formatted name with color indicator
-	Team        string // Formatted team with color indicator
-	Position    string // Formatted position with color indicator
-	Height      string // Formatted height with color indicator
-	College     string // Formatted college with color indicator
-	DraftYear   string // Formatted draft year with color indicator
-	PPG         string // Formatted points per game with color indicator
-	RPG         string // Formatted rebounds per game with color indicator
-	APG         string // Formatted assists per game with color indicator
-	Accolades   string // Formatted accolades with color indicator
-	TeamHistory string // Formatted team history with color indicator
+	Name         string // Formatted name with color indicator
+	Team         string // Formatted team with color indicator
+	Position     string // Formatted position with color indicator
+	Height       string // Formatted height with color indicator
+	College      string // Formatted college with color indicator
+	DraftYear    string // Formatted draft year with color indicator
+	DraftRound   string // Formatted draft round with color indicator
+	DraftNumber  string // Formatted draft number with color indicator
+	JerseyNumber string // Formatted jersey number with color indicator
+	Country      string // Formatted country with color indicator
 }
 
 // String method formats ComparisonResult for display in tabular format
 func (cr ComparisonResult) String() string {
 	// Return formatted string with fixed-width columns for aligned display
-	return fmt.Sprintf("%-20s | %-20s | %-8s | %-6s | %-15s | %-9s | %-6s | %-6s | %-6s | %-30s | %-30s",
-		cr.Name, cr.Team, cr.Position, cr.Height, cr.College, cr.DraftYear, cr.PPG, cr.RPG, cr.APG, cr.Accolades, cr.TeamHistory)
+	return fmt.Sprintf("%-20s | %-20s | %-8s | %-6s | %-15s | %-9s | %-5s | %-6s | %-6s | %-12s",
+		cr.Name, cr.Team, cr.Position, cr.Height, cr.College, cr.DraftYear, cr.DraftRound, cr.DraftNumber, cr.JerseyNumber, cr.Country)
 }
 
 // compareWithTarget compares a guessed player with the target player and returns color-coded results
@@ -79,91 +78,55 @@ func compareWithTarget(guess, target Player) ComparisonResult {
 		result.DraftYear = "🔴 " + fmt.Sprintf("%d", guess.DraftYear)
 	}
 
-	// Compare Points Per Game with tolerance ranges
-	if abs64(guess.PPG-target.PPG) < 1.0 {
-		// Within 1.0 point gets green (very close)
-		result.PPG = "🟢 " + fmt.Sprintf("%.1f", guess.PPG)
-	} else if abs64(guess.PPG-target.PPG) < 3.0 {
-		// Within 3.0 points gets yellow (close)
-		result.PPG = "🟡 " + fmt.Sprintf("%.1f", guess.PPG)
-	} else {
-		// More than 3.0 points difference gets red
-		result.PPG = "🔴 " + fmt.Sprintf("%.1f", guess.PPG)
-	}
-
-	// Compare Rebounds Per Game with tolerance ranges
-	if abs64(guess.RPG-target.RPG) < 1.0 {
-		// Within 1.0 rebound gets green (very close)
-		result.RPG = "🟢 " + fmt.Sprintf("%.1f", guess.RPG)
-	} else if abs64(guess.RPG-target.RPG) < 2.0 {
-		// Within 2.0 rebounds gets yellow (close)
-		result.RPG = "🟡 " + fmt.Sprintf("%.1f", guess.RPG)
-	} else {
-		// More than 2.0 rebounds difference gets red
-		result.RPG = "🔴 " + fmt.Sprintf("%.1f", guess.RPG)
-	}
-
-	// Compare Assists Per Game with tolerance ranges
-	if abs64(guess.APG-target.APG) < 1.0 {
-		// Within 1.0 assist gets green (very close)
-		result.APG = "🟢 " + fmt.Sprintf("%.1f", guess.APG)
-	} else if abs64(guess.APG-target.APG) < 2.0 {
-		// Within 2.0 assists gets yellow (close)
-		result.APG = "🟡 " + fmt.Sprintf("%.1f", guess.APG)
-	} else {
-		// More than 2.0 assists difference gets red
-		result.APG = "🔴 " + fmt.Sprintf("%.1f", guess.APG)
-	}
-
-	// Compare Accolades - check for common elements between lists
-	commonAccolades := findCommonElements(guess.Accolades, target.Accolades)
-	if len(commonAccolades) > 0 {
-		// Check if accolades match exactly (same length and all common)
-		if len(commonAccolades) == len(target.Accolades) && len(guess.Accolades) == len(target.Accolades) {
-			result.Accolades = "🟢 " + strings.Join(guess.Accolades, ", ") // Perfect match
+	// Compare Draft Round - exact match required for green
+	if guess.DraftRound == target.DraftRound {
+		if guess.DraftRound == 0 {
+			result.DraftRound = "🟢 Undrafted" // Special case for undrafted players
 		} else {
-			result.Accolades = "🟡 " + strings.Join(guess.Accolades, ", ") // Partial match
+			result.DraftRound = "🟢 " + fmt.Sprintf("%d", guess.DraftRound)
 		}
 	} else {
-		result.Accolades = "🔴 " + strings.Join(guess.Accolades, ", ") // No common accolades
+		if guess.DraftRound == 0 {
+			result.DraftRound = "🔴 Undrafted" // Special case for undrafted players
+		} else {
+			result.DraftRound = "🔴 " + fmt.Sprintf("%d", guess.DraftRound)
+		}
 	}
 
-	// Compare Team History - check for common teams between lists
-	commonTeams := findCommonElements(guess.TeamHistory, target.TeamHistory)
-	if len(commonTeams) > 0 {
-		// Check if team histories match exactly (same length and all common)
-		if len(commonTeams) == len(target.TeamHistory) && len(guess.TeamHistory) == len(target.TeamHistory) {
-			result.TeamHistory = "🟢 " + strings.Join(guess.TeamHistory, ", ") // Perfect match
+	// Compare Draft Number with tolerance for close matches
+	if guess.DraftNumber == target.DraftNumber {
+		if guess.DraftNumber == 0 {
+			result.DraftNumber = "🟢 N/A" // Special case for undrafted players
 		} else {
-			result.TeamHistory = "🟡 " + strings.Join(guess.TeamHistory, ", ") // Partial match
+			result.DraftNumber = "🟢 " + fmt.Sprintf("%d", guess.DraftNumber)
 		}
+	} else if guess.DraftNumber != 0 && target.DraftNumber != 0 && abs(guess.DraftNumber-target.DraftNumber) <= 5 {
+		// Within 5 picks gets yellow (close match) - only for drafted players
+		result.DraftNumber = "🟡 " + fmt.Sprintf("%d", guess.DraftNumber)
 	} else {
-		result.TeamHistory = "🔴 " + strings.Join(guess.TeamHistory, ", ") // No common teams
+		if guess.DraftNumber == 0 {
+			result.DraftNumber = "🔴 N/A" // Special case for undrafted players
+		} else {
+			result.DraftNumber = "🔴 " + fmt.Sprintf("%d", guess.DraftNumber)
+		}
+	}
+
+	// Compare Jersey Number - exact match required for green
+	if guess.JerseyNumber == target.JerseyNumber {
+		result.JerseyNumber = "🟢 " + guess.JerseyNumber // Green circle for exact match
+	} else {
+		result.JerseyNumber = "🔴 " + guess.JerseyNumber // Red circle for no match
+	}
+
+	// Compare Country - exact match required for green
+	if guess.Country == target.Country {
+		result.Country = "🟢 " + guess.Country // Green circle for exact match
+	} else {
+		result.Country = "🔴 " + guess.Country // Red circle for no match
 	}
 
 	// Return the complete comparison result
 	return result
-}
-
-// findCommonElements finds elements that appear in both string slices
-func findCommonElements(slice1, slice2 []string) []string {
-	// Initialize empty slice to store common elements
-	common := []string{}
-
-	// Iterate through first slice
-	for _, item1 := range slice1 {
-		// For each item in first slice, check if it exists in second slice
-		for _, item2 := range slice2 {
-			if item1 == item2 {
-				// If match found, add to common elements and break inner loop
-				common = append(common, item1)
-				break // Avoid duplicates by breaking after first match
-			}
-		}
-	}
-
-	// Return slice of common elements
-	return common
 }
 
 // abs returns the absolute value of an integer
@@ -174,25 +137,17 @@ func abs(x int) int {
 	return x // Return unchanged if already positive
 }
 
-// abs64 returns the absolute value of a float64
-func abs64(x float64) float64 {
-	if x < 0 {
-		return -x // Return positive version of negative number
-	}
-	return x // Return unchanged if already positive
-}
-
 // printHeader displays the column headers for the comparison results table
 func printHeader() {
 	// Print separator line of equal signs
-	fmt.Println(strings.Repeat("=", 200))
+	fmt.Println(strings.Repeat("=", 150))
 
 	// Print column headers with fixed widths for alignment
-	fmt.Printf("%-20s | %-20s | %-8s | %-6s | %-15s | %-9s | %-6s | %-6s | %-6s | %-30s | %-30s\n",
-		"NAME", "TEAM", "POSITION", "HEIGHT", "COLLEGE", "DRAFT YR", "PPG", "RPG", "APG", "ACCOLADES", "TEAM HISTORY")
+	fmt.Printf("%-20s | %-20s | %-8s | %-6s | %-15s | %-9s | %-5s | %-6s | %-6s | %-12s\n",
+		"NAME", "TEAM", "POSITION", "HEIGHT", "COLLEGE", "DRAFT YR", "ROUND", "PICK", "JERSEY", "COUNTRY")
 
 	// Print another separator line
-	fmt.Println(strings.Repeat("=", 200))
+	fmt.Println(strings.Repeat("=", 150))
 }
 
 // printInstructions displays the game rules and setup information
@@ -201,7 +156,7 @@ func printInstructions() {
 	fmt.Println("\nHow to play:")
 	fmt.Println("- Guess NBA players by typing their full name")
 	fmt.Println("- 🟢 Green = Exact match")
-	fmt.Println("- 🟡 Yellow = Close match (within range for numbers, partial match for lists)")
+	fmt.Println("- 🟡 Yellow = Close match (within range for numbers)")
 	fmt.Println("- 🔴 Red = No match")
 
 	// Display information about the player database size

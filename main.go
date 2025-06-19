@@ -155,18 +155,17 @@ func printPlayerDetails(player Player) {
 	fmt.Printf("College: %s\n", player.College)
 	fmt.Printf("Draft Year: %d\n", player.DraftYear)
 
-	// Display career statistics with one decimal place
-	fmt.Printf("Career Averages: %.1f PPG, %.1f RPG, %.1f APG\n", player.PPG, player.RPG, player.APG)
-
-	// Only display accolades if the player has any
-	if len(player.Accolades) > 0 {
-		fmt.Printf("Accolades: %s\n", strings.Join(player.Accolades, ", "))
+	// Display draft information
+	if player.DraftRound == 0 {
+		fmt.Printf("Draft Status: Undrafted\n")
+	} else {
+		fmt.Printf("Draft Round: %d\n", player.DraftRound)
+		fmt.Printf("Draft Pick: %d\n", player.DraftNumber)
 	}
 
-	// Only display team history if the player has any
-	if len(player.TeamHistory) > 0 {
-		fmt.Printf("Team History: %s\n", strings.Join(player.TeamHistory, ", "))
-	}
+	// Display jersey number and country
+	fmt.Printf("Jersey Number: %s\n", player.JerseyNumber)
+	fmt.Printf("Country: %s\n", player.Country)
 
 	// Print closing decorative separator line
 	fmt.Println(strings.Repeat("-", 50))
