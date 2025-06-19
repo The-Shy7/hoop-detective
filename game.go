@@ -197,9 +197,6 @@ func printHeader() {
 
 // printInstructions displays the game rules and setup information
 func printInstructions() {
-	// Print game title with basketball emoji
-	fmt.Println("\n🏀 NBA PLAYER GUESSING GAME 🏀")
-
 	// Print game rules and instructions
 	fmt.Println("\nHow to play:")
 	fmt.Println("- Guess NBA players by typing their full name")

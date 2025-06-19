@@ -11,10 +11,16 @@ import (
 // main is the entry point of the program
 func main() {
 	// Initialize players from API
-	fmt.Println("🏀 NBA PLAYER GUESSING GAME 🏀")
+	fmt.Println("🏀 HOOP DETECTIVE 🏀")
 	fmt.Println("Loading NBA player database...")
 
-	// TODO: Attempt to load player data from NBA API or fallback to hardcoded data
+	// Attempt to load player data from NBA API or fallback to hardcoded data
+	err := initializePlayers()
+	if err != nil {
+		// Display warning if API loading failed but continue with fallback data
+		fmt.Printf("Warning: Could not load full player database: %v\n", err)
+		fmt.Println("Using fallback player data...")
+	}
 
 	// Initialize game variables
 	target := getRandomPlayer()           // Select a random player as the mystery player to guess
@@ -23,9 +29,13 @@ func main() {
 	scanner := bufio.NewScanner(os.Stdin) // Create scanner to read user input from terminal
 
 	// Print game instructions and setup information
+	printInstructions()
 	fmt.Printf("\nYou have %d attempts to guess the mystery NBA player!\n", maxAttempts)
 	fmt.Println("Type 'quit' to exit the game.")
 	fmt.Println("Type 'hint' to get a hint about available players.")
+
+	// Print header row for the comparison results table
+	printHeader()
 
 	// Main game loop - continues until max attempts reached or player guesses correctly
 	for attempts < maxAttempts {
@@ -52,14 +62,31 @@ func main() {
 			continue         // Don't count this as an attempt, go to next iteration
 		}
 
-		// TODO: Search for the guessed player in the database
+		// Search for the guessed player in the database
+		guessedPlayer, found := findPlayerByName(guess)
+		if !found {
+			// Player not found in database - show error and continue without counting attempt
+			fmt.Printf("❌ Player '%s' not found. Please check the spelling.\n", guess)
+			fmt.Println("💡 Tip: Type 'hint' to see some available players")
+			continue // Don't increment attempts counter
+		}
 
 		// Increment attempts counter since we have a valid guess
 		attempts++
 
-		// TODO: Compare the guessed player with the target player and display results
+		// Compare the guessed player with the target player and display results
+		result := compareWithTarget(*guessedPlayer, target)
+		fmt.Println(result) // Print the color-coded comparison results
 
-		// TODO: Check if the guess is correct (exact name match)
+		// Check if the guess is correct (exact name match)
+		if guessedPlayer.Name == target.Name {
+			// Player guessed correctly - show victory message and exit
+			fmt.Printf("\n🎉 CONGRATULATIONS! 🎉\n")
+			fmt.Printf("You guessed correctly in %d attempts!\n", attempts)
+			fmt.Printf("The mystery player was: %s\n", target.Name)
+			printPlayerDetails(target) // Show detailed information about the target player
+			return                     // Exit the program
+		}
 
 		// Check if player has used all attempts
 		if attempts == maxAttempts {
