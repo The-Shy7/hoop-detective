@@ -1,58 +1,54 @@
 package main
 
 import (
-	// Package for JSON encoding and decoding
-	"fmt"      // Package for formatted I/O operations
-	"io"       // Package for I/O primitives
-	"net/http" // Package for HTTP client and server implementations
-	// Package for string conversions
-	"strings" // Package for string manipulation functions
-	"time"    // Package for time-related operations
-
-	"github.com/tidwall/gjson" // Third-party package for JSON parsing
+	"bufio"         // Package for reading files line by line
+	"encoding/json" // Package for JSON encoding and decoding
+	"fmt"           // Package for formatted I/O operations
+	"io"            // Package for I/O primitives
+	"net/http"      // Package for HTTP client and server implementations
+	"os"            // Package for file operations
+	"strings"       // Package for string manipulation functions
+	"time"          // Package for time-related operations
 )
 
 // Constants for NBA API configuration
 const (
-	NBA_API_BASE = "https://stats.nba.com/stats"                                  // Base URL for NBA Stats API
+	NBA_API_BASE = "https://api.balldontlie.io/v1"                                // Base URL for Ball Don't Lie API
 	USER_AGENT   = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" // User agent string to mimic browser requests
 )
 
 // APIPlayer represents the raw player data structure returned by the NBA API
 type APIPlayer struct {
-	ID          int    `json:"PERSON_ID"`          // Unique player identifier
-	FirstName   string `json:"FIRST_NAME"`         // Player's first name
-	LastName    string `json:"LAST_NAME"`          // Player's last name
-	DisplayName string `json:"DISPLAY_FIRST_LAST"` // Full display name
-	TeamID      int    `json:"TEAM_ID"`            // Current team identifier
-	TeamName    string `json:"TEAM_NAME"`          // Current team name
-	TeamCity    string `json:"TEAM_CITY"`          // Current team city
-	Position    string `json:"POSITION"`           // Playing position
-	Height      string `json:"HEIGHT"`             // Player height
-	Weight      string `json:"WEIGHT"`             // Player weight
-	College     string `json:"SCHOOL"`             // College attended
-	Country     string `json:"COUNTRY"`            // Country of origin
-	DraftYear   int    `json:"DRAFT_YEAR"`         // Year drafted
-	DraftRound  int    `json:"DRAFT_ROUND"`        // Draft round
-	DraftNumber int    `json:"DRAFT_NUMBER"`       // Draft pick number
-	Experience  int    `json:"EXPERIENCE"`         // Years of NBA experience
-	Jersey      string `json:"JERSEY"`             // Jersey number
-	IsActive    bool   `json:"ROSTERSTATUS"`       // Whether player is currently active
+	ID           int    `json:"id"`            // Unique player identifier
+	FirstName    string `json:"first_name"`    // Player's first name
+	LastName     string `json:"last_name"`     // Player's last name
+	Position     string `json:"position"`      // Playing position
+	Height       string `json:"height"`        // Player height (e.g., "6-2")
+	Weight       string `json:"weight"`        // Player weight in pounds
+	JerseyNumber string `json:"jersey_number"` // Jersey number
+	College      string `json:"college"`       // College attended
+	Country      string `json:"country"`       // Country of origin
+	DraftYear    *int   `json:"draft_year"`    // Draft year (pointer to handle null)
+	DraftRound   *int   `json:"draft_round"`   // Draft round (pointer to handle null)
+	DraftNumber  *int   `json:"draft_number"`  // Draft number (pointer to handle null)
+	Team         struct {
+		ID           int    `json:"id"`           // Team identifier
+		Conference   string `json:"conference"`   // Team conference
+		Division     string `json:"division"`     // Team division
+		City         string `json:"city"`         // Team city
+		Name         string `json:"name"`         // Team name
+		FullName     string `json:"full_name"`    // Full team name
+		Abbreviation string `json:"abbreviation"` // Team abbreviation
+	} `json:"team"` // Current team information
 }
 
-// PlayerStats holds career statistical averages for a player
-type PlayerStats struct {
-	PPG float64 // Points per game average
-	RPG float64 // Rebounds per game average
-	APG float64 // Assists per game average
-}
-
-// PlayerCareerInfo holds additional career information not available from basic API
-type PlayerCareerInfo struct {
-	Accolades     []string // List of major achievements and awards
-	TeamHistory   []string // List of all teams played for
-	AllStarYears  []int    // Years selected as All-Star
-	Championships []int    // Years won championships
+// APIResponse represents the structure of API responses
+type APIResponse struct {
+	Data []APIPlayer `json:"data"` // Array of player data
+	Meta struct {
+		NextCursor *int `json:"next_cursor"` // Next cursor for pagination (pointer to handle null)
+		PerPage    int  `json:"per_page"`    // Items per page
+	} `json:"meta"` // Pagination metadata
 }
 
 // Global cache variables to store API responses and reduce repeated requests
@@ -60,7 +56,63 @@ var playerCache = make(map[int]*Player) // Cache individual player data by ID
 var allPlayersCache []Player            // Cache all players list
 var cacheExpiry time.Time               // Timestamp when cache expires
 
-// makeAPIRequest performs HTTP GET request to NBA API with proper headers
+// loadEnvFile loads environment variables from .env file
+func loadEnvFile() error {
+	file, err := os.Open(".env")
+	if err != nil {
+		// .env file doesn't exist, which is okay
+		return nil
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Split on first = sign
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		// Remove quotes if present
+		if (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) ||
+			(strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) {
+			value = value[1 : len(value)-1]
+		}
+
+		// Set environment variable
+		os.Setenv(key, value)
+	}
+
+	return scanner.Err()
+}
+
+// getAPIKey retrieves the API key from .env file or environment variable
+func getAPIKey() string {
+	// First, try to load from .env file
+	loadEnvFile()
+
+	// Get API key from environment variable
+	apiKey := os.Getenv("BALLDONTLIE_API_KEY")
+
+	// Check if it's the placeholder value
+	if apiKey == "your_api_key_here" || apiKey == "" {
+		return ""
+	}
+
+	return apiKey
+}
+
+// makeAPIRequest performs HTTP GET request to NBA API with proper headers and authentication
 func makeAPIRequest(url string) ([]byte, error) {
 	// Create HTTP client with 30-second timeout
 	client := &http.Client{
@@ -77,9 +129,19 @@ func makeAPIRequest(url string) ([]byte, error) {
 	req.Header.Set("User-Agent", USER_AGENT)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
 	req.Header.Set("Connection", "keep-alive")
-	req.Header.Set("Upgrade-Insecure-Requests", "1")
+
+	// Check for API key and set Authorization header
+	apiKey := getAPIKey()
+	if apiKey != "" {
+		// Use the correct Authorization header format for Ball Don't Lie API
+		req.Header.Set("Authorization", apiKey)
+		fmt.Printf("DEBUG: Using API key for authentication (key: %s...)\n", apiKey[:8])
+	} else {
+		fmt.Printf("DEBUG: No API key found - API may return limited data or require authentication\n")
+		fmt.Printf("DEBUG: To get an API key, visit: https://app.balldontlie.io\n")
+		fmt.Printf("DEBUG: Then add it to your .env file: BALLDONTLIE_API_KEY=your_actual_key\n")
+	}
 
 	// Execute the HTTP request
 	resp, err := client.Do(req)
@@ -88,13 +150,23 @@ func makeAPIRequest(url string) ([]byte, error) {
 	}
 	defer resp.Body.Close() // Ensure response body is closed when function exits
 
+	// Read response body first to check content
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
 	// Check if response status is successful (200 OK)
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("API request failed with status: %d", resp.StatusCode)
 	}
 
-	// Read and return response body
-	return io.ReadAll(resp.Body)
+	// Check if response is HTML (indicating authentication required)
+	if strings.Contains(string(body), "<!DOCTYPE html>") || strings.Contains(string(body), "<html>") {
+		return nil, fmt.Errorf("API returned HTML documentation page - authentication required or invalid API key. Please check your API key in the .env file")
+	}
+
+	return body, nil
 }
 
 // fetchAllPlayers retrieves comprehensive player data from NBA API
@@ -105,259 +177,346 @@ func fetchAllPlayers() ([]Player, error) {
 	}
 
 	// Inform user that API fetch is starting
-	fmt.Println("Fetching NBA players from API...")
+	fmt.Println("Fetching NBA players from Ball Don't Lie API...")
 
-	// Construct API URL for all players (current and historical)
-	url := fmt.Sprintf("%s/commonallplayers?LeagueID=00&Season=2023-24&IsOnlyCurrentSeason=0", NBA_API_BASE)
-
-	// Make API request
-	data, err := makeAPIRequest(url)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch players: %v", err)
+	// Check if API key is available
+	apiKey := getAPIKey()
+	if apiKey == "" {
+		fmt.Println("Note: No API key found in .env file. You can:")
+		fmt.Println("1. Get a free API key from https://app.balldontlie.io")
+		fmt.Println("2. Add it to your .env file: BALLDONTLIE_API_KEY=your_actual_key")
+		fmt.Println("3. The game will use a fallback list of legendary players")
+		return nil, fmt.Errorf("no API key provided")
+	} else {
+		fmt.Println("Note: Using API key from .env file for full player database access.")
 	}
 
-	// Parse JSON response using gjson for efficient extraction
-	result := gjson.GetBytes(data, "resultSets.0") // Get first result set
-	headers := result.Get("headers").Array()       // Extract column headers
-	rows := result.Get("rowSet").Array()           // Extract data rows
+	// Initialize slice to store all players
+	var allPlayers []Player
 
-	// Initialize slice to store processed players
-	var players []Player
+	// Start with cursor 0 and continue until we reach the end or hit our limit
+	cursor := 0
+	maxPages := 10 // Fetch more pages since we have authentication
+	pageCount := 0
 
-	// Create map for quick header index lookup
-	headerMap := make(map[string]int)
-	for i, header := range headers {
-		headerMap[header.String()] = i // Map header name to column index
+	for pageCount < maxPages {
+		// Construct API URL for current cursor with 100 players per page (max allowed)
+		var url string
+		if cursor == 0 {
+			url = fmt.Sprintf("%s/players?per_page=100", NBA_API_BASE)
+		} else {
+			url = fmt.Sprintf("%s/players?cursor=%d&per_page=100", NBA_API_BASE, cursor)
+		}
+
+		// Make API request for current page
+		data, err := makeAPIRequest(url)
+		if err != nil {
+			// If we have some players already, return them instead of failing completely
+			if len(allPlayers) > 0 {
+				break
+			}
+			return nil, fmt.Errorf("failed to fetch players: %v", err)
+		}
+
+		// Parse JSON response
+		var response APIResponse
+		err = json.Unmarshal(data, &response)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse API response: %v", err)
+		}
+
+		// Process each player from current page
+		playersProcessed := 0
+		for _, apiPlayer := range response.Data {
+			// Skip players with missing essential data
+			if apiPlayer.FirstName == "" || apiPlayer.LastName == "" {
+				continue
+			}
+
+			// Create full player name
+			playerName := fmt.Sprintf("%s %s", apiPlayer.FirstName, apiPlayer.LastName)
+			currentTeam := getTeamName(apiPlayer)
+
+			// Create Player struct with available information from API
+			player := Player{
+				Name:         playerName,                              // Combine first and last name
+				Team:         currentTeam,                             // Extract team name
+				Position:     getPosition(apiPlayer.Position),         // Extract and validate position
+				Height:       formatHeightFromAPI(apiPlayer.Height),   // Format height from API
+				College:      getCollege(apiPlayer.College),           // Get college info
+				DraftYear:    getDraftYear(apiPlayer.DraftYear),       // Get draft year
+				DraftRound:   getDraftRound(apiPlayer.DraftRound),     // Get draft round
+				DraftNumber:  getDraftNumber(apiPlayer.DraftNumber),   // Get draft number
+				JerseyNumber: getJerseyNumber(apiPlayer.JerseyNumber), // Get jersey number
+				Country:      getCountry(apiPlayer.Country),           // Get country
+			}
+
+			// Add completed player to results
+			allPlayers = append(allPlayers, player)
+			playersProcessed++
+		}
+
+		// Show progress to user
+		fmt.Printf("Loaded %d players so far... (processed %d from cursor %d)\n",
+			len(allPlayers), playersProcessed, cursor)
+
+		// Check if we've reached the last page
+		if response.Meta.NextCursor == nil || len(response.Data) < 100 {
+			fmt.Printf("Reached end of data at cursor %d (NextCursor: %v, DataCount: %d)\n",
+				cursor, response.Meta.NextCursor, len(response.Data))
+			break
+		}
+
+		// Add delay between requests to be respectful to the API
+		time.Sleep(1 * time.Second) // Increased delay for rate limiting
+
+		// Move to next cursor
+		cursor = *response.Meta.NextCursor
+		pageCount++
 	}
 
-	// Process each player row from API response
-	for _, row := range rows {
-		rowData := row.Array() // Convert row to array of values
-		if len(rowData) == 0 {
-			continue // Skip empty rows
-		}
-
-		// Extract essential player information
-		playerID := int(rowData[headerMap["PERSON_ID"]].Int()) // Get player ID
-		firstName := rowData[headerMap["FIRST_NAME"]].String() // Get first name
-		lastName := rowData[headerMap["LAST_NAME"]].String()   // Get last name
-
-		// Skip players with missing essential data
-		if firstName == "" || lastName == "" {
-			continue
-		}
-
-		// Create Player struct with basic information
-		player := Player{
-			Name:      fmt.Sprintf("%s %s", firstName, lastName),      // Combine first and last name
-			Team:      getTeamName(rowData, headerMap),                // Extract team name
-			Position:  getStringValue(rowData, headerMap, "POSITION"), // Extract position
-			Height:    getStringValue(rowData, headerMap, "HEIGHT"),   // Extract height
-			College:   getStringValue(rowData, headerMap, "SCHOOL"),   // Extract college
-			DraftYear: int(rowData[headerMap["FROM_YEAR"]].Int()),     // Extract draft year
-		}
-
-		// Fetch detailed career statistics for this player
-		stats, err := fetchPlayerStats(playerID)
-		if err == nil {
-			// If stats fetch successful, add to player data
-			player.PPG = stats.PPG
-			player.RPG = stats.RPG
-			player.APG = stats.APG
-		}
-
-		// Get additional career information (accolades, team history)
-		careerInfo := getPlayerCareerInfo(player.Name)
-		player.Accolades = careerInfo.Accolades
-		player.TeamHistory = careerInfo.TeamHistory
-
-		// Add completed player to results
-		players = append(players, player)
-
-		// Add small delay to avoid overwhelming the API with requests
-		time.Sleep(50 * time.Millisecond)
-
-		// Limit total players to prevent excessive API calls during development
-		if len(players) >= 500 {
-			break // Stop after 500 players
-		}
+	// If we didn't get any players from API, return error
+	if len(allPlayers) == 0 {
+		return nil, fmt.Errorf("no players retrieved from API - authentication may be required")
 	}
 
 	// Cache the results for 1 hour to improve performance
-	allPlayersCache = players
+	allPlayersCache = allPlayers
 	cacheExpiry = time.Now().Add(1 * time.Hour)
 
 	// Inform user of successful completion
-	fmt.Printf("Successfully loaded %d NBA players!\n", len(players))
-	return players, nil
+	fmt.Printf("Successfully loaded %d NBA players from API!\n", len(allPlayers))
+	return allPlayers, nil
 }
 
-// fetchPlayerStats retrieves career statistics for a specific player
-func fetchPlayerStats(playerID int) (*PlayerStats, error) {
-	// Construct API URL for player career stats
-	url := fmt.Sprintf("%s/playercareerstats?PlayerID=%d", NBA_API_BASE, playerID)
-
-	// Make API request for player stats
-	data, err := makeAPIRequest(url)
-	if err != nil {
-		return nil, err // Return error if request fails
+// getTeamName safely extracts team name from API player data
+func getTeamName(apiPlayer APIPlayer) string {
+	// Check if team information is available
+	if apiPlayer.Team.FullName != "" {
+		return apiPlayer.Team.FullName // Return full team name if available
+	} else if apiPlayer.Team.Name != "" {
+		return apiPlayer.Team.Name // Return team name if available
 	}
-
-	// Parse career totals from response (resultSets.1 contains career summary)
-	result := gjson.GetBytes(data, "resultSets.1")
-	if !result.Exists() {
-		return nil, fmt.Errorf("no career stats found") // Error if no stats data
-	}
-
-	// Extract rows from career totals
-	rows := result.Get("rowSet").Array()
-	if len(rows) == 0 {
-		return nil, fmt.Errorf("no career stats data") // Error if no data rows
-	}
-
-	// Get the career totals row (typically the last row in the dataset)
-	careerRow := rows[len(rows)-1].Array()
-
-	// Create PlayerStats struct with extracted values
-	stats := &PlayerStats{
-		PPG: careerRow[26].Float(), // Points per game (column 26)
-		RPG: careerRow[23].Float(), // Rebounds per game (column 23)
-		APG: careerRow[24].Float(), // Assists per game (column 24)
-	}
-
-	return stats, nil
+	return "Free Agent" // Default value if no team information
 }
 
-// getTeamName safely extracts team name from player data row
-func getTeamName(rowData []gjson.Result, headerMap map[string]int) string {
-	// Check if TEAM_NAME column exists and is within bounds
-	if idx, exists := headerMap["TEAM_NAME"]; exists && idx < len(rowData) {
-		teamName := rowData[idx].String() // Extract team name
-		if teamName != "" {
-			return teamName // Return team name if not empty
-		}
-	}
-	return "Free Agent" // Default value if no team or empty
-}
+// getPosition validates and returns a clean position string
+func getPosition(position string) string {
+	// Clean up position string and return standard abbreviations
+	pos := strings.TrimSpace(strings.ToUpper(position))
 
-// getStringValue safely extracts string value from player data row
-func getStringValue(rowData []gjson.Result, headerMap map[string]int, key string) string {
-	// Check if requested column exists and is within bounds
-	if idx, exists := headerMap[key]; exists && idx < len(rowData) {
-		value := rowData[idx].String() // Extract string value
-		if value == "" {
-			return "Unknown" // Return "Unknown" if empty
-		}
-		return value // Return actual value if not empty
-	}
-	return "Unknown" // Default value if column doesn't exist
-}
-
-// getPlayerCareerInfo provides additional career information for well-known players
-// This is a simplified implementation - a full version would query additional APIs
-func getPlayerCareerInfo(playerName string) PlayerCareerInfo {
-	// Initialize empty career info structure
-	info := PlayerCareerInfo{
-		Accolades:   []string{}, // Empty accolades list
-		TeamHistory: []string{}, // Empty team history list
-	}
-
-	// Add hardcoded accolades and team history for famous players
-	// In a production system, this would query additional API endpoints
-	switch playerName {
-	case "LeBron James":
-		info.Accolades = []string{"4x NBA Champion", "4x Finals MVP", "4x MVP", "19x All-Star"}
-		info.TeamHistory = []string{"Cleveland Cavaliers", "Miami Heat", "Los Angeles Lakers"}
-	case "Michael Jordan":
-		info.Accolades = []string{"6x NBA Champion", "6x Finals MVP", "5x MVP", "14x All-Star"}
-		info.TeamHistory = []string{"Chicago Bulls", "Washington Wizards"}
-	case "Kobe Bryant":
-		info.Accolades = []string{"5x NBA Champion", "2x Finals MVP", "1x MVP", "18x All-Star"}
-		info.TeamHistory = []string{"Los Angeles Lakers"}
-	case "Stephen Curry":
-		info.Accolades = []string{"4x NBA Champion", "1x Finals MVP", "2x MVP", "9x All-Star"}
-		info.TeamHistory = []string{"Golden State Warriors"}
-	case "Kevin Durant":
-		info.Accolades = []string{"2x NBA Champion", "2x Finals MVP", "1x MVP", "14x All-Star"}
-		info.TeamHistory = []string{"Seattle SuperSonics", "Oklahoma City Thunder", "Golden State Warriors", "Brooklyn Nets", "Phoenix Suns"}
+	// Map common variations to standard positions
+	switch pos {
+	case "POINT GUARD", "PG":
+		return "PG"
+	case "SHOOTING GUARD", "SG":
+		return "SG"
+	case "SMALL FORWARD", "SF":
+		return "SF"
+	case "POWER FORWARD", "PF":
+		return "PF"
+	case "CENTER", "C":
+		return "C"
+	case "GUARD", "G":
+		return "G" // Generic guard
+	case "FORWARD", "F":
+		return "F" // Generic forward
 	default:
-		// For other players, add generic accolades based on name patterns
-		if strings.Contains(playerName, "All-Star") {
-			info.Accolades = append(info.Accolades, "All-Star")
+		if pos != "" {
+			return pos // Return as-is if not empty
 		}
+		return "Unknown" // Default for empty positions
+	}
+}
+
+// formatHeightFromAPI converts height from API format (e.g., "6-2") to readable format
+func formatHeightFromAPI(height string) string {
+	if height == "" {
+		return "Unknown"
 	}
 
-	return info // Return career information
+	// API returns height in format like "6-2" (feet-inches)
+	parts := strings.Split(height, "-")
+	if len(parts) == 2 {
+		return fmt.Sprintf("%s'%s\"", parts[0], parts[1])
+	}
+
+	return height // Return as-is if format is unexpected
+}
+
+// getCollege returns college information or default
+func getCollege(college string) string {
+	if college == "" {
+		return "Unknown"
+	}
+	return college
+}
+
+// getDraftYear returns draft year or estimated year
+func getDraftYear(draftYear *int) int {
+	if draftYear != nil {
+		return *draftYear
+	}
+
+	// Return a reasonable default for unknown draft years
+	return 2020 // Default to recent year
+}
+
+// getDraftRound returns draft round or 0 for undrafted
+func getDraftRound(draftRound *int) int {
+	if draftRound != nil {
+		return *draftRound
+	}
+	return 0 // 0 indicates undrafted
+}
+
+// getDraftNumber returns draft number or 0 for undrafted
+func getDraftNumber(draftNumber *int) int {
+	if draftNumber != nil {
+		return *draftNumber
+	}
+	return 0 // 0 indicates undrafted
+}
+
+// getJerseyNumber returns jersey number or "Unknown" if not available
+func getJerseyNumber(jerseyNumber string) string {
+	if jerseyNumber == "" {
+		return "Unknown"
+	}
+	return jerseyNumber
+}
+
+// getCountry returns country or "Unknown" if not available
+func getCountry(country string) string {
+	if country == "" {
+		return "Unknown"
+	}
+	return country
 }
 
 // getFallbackPlayers provides a curated list of notable players when API is unavailable
 func getFallbackPlayers() []Player {
-	// Return hardcoded list of famous NBA players with complete data
+	// Return expanded list of famous NBA players with complete data
 	return []Player{
 		{
-			Name:        "LeBron James",                                                         // Current Lakers superstar
-			Team:        "Los Angeles Lakers",                                                   // Current team
-			Position:    "SF",                                                                   // Small Forward
-			Height:      "6'9\"",                                                                // Height in feet/inches
-			College:     "None",                                                                 // Straight from high school
-			DraftYear:   2003,                                                                   // Draft year
-			PPG:         27.2,                                                                   // Career points per game
-			RPG:         7.5,                                                                    // Career rebounds per game
-			APG:         7.3,                                                                    // Career assists per game
-			Accolades:   []string{"4x NBA Champion", "4x Finals MVP", "4x MVP", "19x All-Star"}, // Major achievements
-			TeamHistory: []string{"Cleveland Cavaliers", "Miami Heat", "Los Angeles Lakers"},    // Teams played for
+			Name:         "LeBron James",       // Current Lakers superstar
+			Team:         "Los Angeles Lakers", // Current team
+			Position:     "SF",                 // Small Forward
+			Height:       "6'9\"",              // Height in feet/inches
+			College:      "None",               // Straight from high school
+			DraftYear:    2003,                 // Draft year
+			DraftRound:   1,                    // First round
+			DraftNumber:  1,                    // First overall pick
+			JerseyNumber: "6",                  // Current jersey number
+			Country:      "USA",                // Country of origin
 		},
 		{
-			Name:        "Michael Jordan",                                                       // Basketball legend
-			Team:        "Retired",                                                              // No longer active
-			Position:    "SG",                                                                   // Shooting Guard
-			Height:      "6'6\"",                                                                // Height in feet/inches
-			College:     "North Carolina",                                                       // College attended
-			DraftYear:   1984,                                                                   // Draft year
-			PPG:         30.1,                                                                   // Career points per game
-			RPG:         6.2,                                                                    // Career rebounds per game
-			APG:         5.3,                                                                    // Career assists per game
-			Accolades:   []string{"6x NBA Champion", "6x Finals MVP", "5x MVP", "14x All-Star"}, // Major achievements
-			TeamHistory: []string{"Chicago Bulls", "Washington Wizards"},                        // Teams played for
+			Name:         "Michael Jordan", // Basketball legend
+			Team:         "Retired",        // No longer active
+			Position:     "SG",             // Shooting Guard
+			Height:       "6'6\"",          // Height in feet/inches
+			College:      "North Carolina", // College attended
+			DraftYear:    1984,             // Draft year
+			DraftRound:   1,                // First round
+			DraftNumber:  3,                // Third overall pick
+			JerseyNumber: "23",             // Famous jersey number
+			Country:      "USA",            // Country of origin
 		},
 		{
-			Name:        "Kobe Bryant",                                                          // Lakers legend
-			Team:        "Retired",                                                              // No longer active
-			Position:    "SG",                                                                   // Shooting Guard
-			Height:      "6'6\"",                                                                // Height in feet/inches
-			College:     "None",                                                                 // Straight from high school
-			DraftYear:   1996,                                                                   // Draft year
-			PPG:         25.0,                                                                   // Career points per game
-			RPG:         5.2,                                                                    // Career rebounds per game
-			APG:         4.7,                                                                    // Career assists per game
-			Accolades:   []string{"5x NBA Champion", "2x Finals MVP", "1x MVP", "18x All-Star"}, // Major achievements
-			TeamHistory: []string{"Los Angeles Lakers"},                                         // Teams played for
+			Name:         "Kobe Bryant", // Lakers legend
+			Team:         "Retired",     // No longer active
+			Position:     "SG",          // Shooting Guard
+			Height:       "6'6\"",       // Height in feet/inches
+			College:      "None",        // Straight from high school
+			DraftYear:    1996,          // Draft year
+			DraftRound:   1,             // First round
+			DraftNumber:  13,            // 13th overall pick
+			JerseyNumber: "24",          // Later jersey number
+			Country:      "USA",         // Country of origin
 		},
 		{
-			Name:        "Stephen Curry",                                                       // Warriors superstar
-			Team:        "Golden State Warriors",                                               // Current team
-			Position:    "PG",                                                                  // Point Guard
-			Height:      "6'2\"",                                                               // Height in feet/inches
-			College:     "Davidson",                                                            // College attended
-			DraftYear:   2009,                                                                  // Draft year
-			PPG:         24.3,                                                                  // Career points per game
-			RPG:         4.6,                                                                   // Career rebounds per game
-			APG:         6.5,                                                                   // Career assists per game
-			Accolades:   []string{"4x NBA Champion", "1x Finals MVP", "2x MVP", "9x All-Star"}, // Major achievements
-			TeamHistory: []string{"Golden State Warriors"},                                     // Teams played for
+			Name:         "Stephen Curry",         // Warriors superstar
+			Team:         "Golden State Warriors", // Current team
+			Position:     "PG",                    // Point Guard
+			Height:       "6'2\"",                 // Height in feet/inches
+			College:      "Davidson",              // College attended
+			DraftYear:    2009,                    // Draft year
+			DraftRound:   1,                       // First round
+			DraftNumber:  7,                       // 7th overall pick
+			JerseyNumber: "30",                    // Jersey number
+			Country:      "USA",                   // Country of origin
 		},
 		{
-			Name:        "Kevin Durant",                                                                                                     // Current Suns star
-			Team:        "Phoenix Suns",                                                                                                     // Current team
-			Position:    "SF",                                                                                                               // Small Forward
-			Height:      "6'10\"",                                                                                                           // Height in feet/inches
-			College:     "Texas",                                                                                                            // College attended
-			DraftYear:   2007,                                                                                                               // Draft year
-			PPG:         27.3,                                                                                                               // Career points per game
-			RPG:         7.1,                                                                                                                // Career rebounds per game
-			APG:         4.3,                                                                                                                // Career assists per game
-			Accolades:   []string{"2x NBA Champion", "2x Finals MVP", "1x MVP", "14x All-Star"},                                             // Major achievements
-			TeamHistory: []string{"Seattle SuperSonics", "Oklahoma City Thunder", "Golden State Warriors", "Brooklyn Nets", "Phoenix Suns"}, // Teams played for
+			Name:         "Kevin Durant", // Current Suns star
+			Team:         "Phoenix Suns", // Current team
+			Position:     "SF",           // Small Forward
+			Height:       "6'10\"",       // Height in feet/inches
+			College:      "Texas",        // College attended
+			DraftYear:    2007,           // Draft year
+			DraftRound:   1,              // First round
+			DraftNumber:  2,              // Second overall pick
+			JerseyNumber: "35",           // Jersey number
+			Country:      "USA",          // Country of origin
+		},
+		{
+			Name:         "Giannis Antetokounmpo", // Bucks superstar
+			Team:         "Milwaukee Bucks",       // Current team
+			Position:     "PF",                    // Power Forward
+			Height:       "6'11\"",                // Height in feet/inches
+			College:      "None",                  // International player
+			DraftYear:    2013,                    // Draft year
+			DraftRound:   1,                       // First round
+			DraftNumber:  15,                      // 15th overall pick
+			JerseyNumber: "34",                    // Jersey number
+			Country:      "Greece",                // Country of origin
+		},
+		{
+			Name:         "Luka Doncic",      // Mavericks star
+			Team:         "Dallas Mavericks", // Current team
+			Position:     "PG",               // Point Guard
+			Height:       "6'7\"",            // Height in feet/inches
+			College:      "None",             // International player
+			DraftYear:    2018,               // Draft year
+			DraftRound:   1,                  // First round
+			DraftNumber:  3,                  // Third overall pick
+			JerseyNumber: "77",               // Jersey number
+			Country:      "Slovenia",         // Country of origin
+		},
+		{
+			Name:         "Joel Embiid",        // 76ers center
+			Team:         "Philadelphia 76ers", // Current team
+			Position:     "C",                  // Center
+			Height:       "7'0\"",              // Height in feet/inches
+			College:      "Kansas",             // College attended
+			DraftYear:    2014,                 // Draft year
+			DraftRound:   1,                    // First round
+			DraftNumber:  3,                    // Third overall pick
+			JerseyNumber: "21",                 // Jersey number
+			Country:      "Cameroon",           // Country of origin
+		},
+		{
+			Name:         "Nikola Jokic",   // Nuggets center
+			Team:         "Denver Nuggets", // Current team
+			Position:     "C",              // Center
+			Height:       "6'11\"",         // Height in feet/inches
+			College:      "None",           // International player
+			DraftYear:    2014,             // Draft year
+			DraftRound:   2,                // Second round
+			DraftNumber:  41,               // 41st overall pick
+			JerseyNumber: "15",             // Jersey number
+			Country:      "Serbia",         // Country of origin
+		},
+		{
+			Name:         "Jayson Tatum",   // Celtics forward
+			Team:         "Boston Celtics", // Current team
+			Position:     "SF",             // Small Forward
+			Height:       "6'8\"",          // Height in feet/inches
+			College:      "Duke",           // College attended
+			DraftYear:    2017,             // Draft year
+			DraftRound:   1,                // First round
+			DraftNumber:  3,                // Third overall pick
+			JerseyNumber: "0",              // Jersey number
+			Country:      "USA",            // Country of origin
 		},
 	}
 }
