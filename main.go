@@ -1,11 +1,12 @@
 package main
 
 import (
-	"bufio" // Package for buffered I/O operations, used for reading user input
-	"fmt"   // Package for formatted I/O operations like printing to console
-	"math/rand"
-	"os"      // Package for operating system interface, used for standard input
-	"strings" // Package for string manipulation functions
+	"bufio"     // Package for buffered I/O operations, used for reading user input
+	"fmt"       // Package for formatted I/O operations like printing to console
+	"math/rand" // Package for generating random numbers
+	"os"        // Package for operating system interface, used for standard input
+	"strings"   // Package for string manipulation functions
+	"time"      // Package for time-related operations
 )
 
 // main is the entry point of the program
@@ -26,13 +27,15 @@ func main() {
 	target := getRandomPlayer()           // Select a random player as the mystery player to guess
 	attempts := 0                         // Counter for number of guesses made
 	maxAttempts := 8                      // Maximum number of guesses allowed
+	hintsUsed := 0                        // Counter for number of hints used
+	maxHints := 3                         // Maximum number of hints allowed
 	scanner := bufio.NewScanner(os.Stdin) // Create scanner to read user input from terminal
 
 	// Print game instructions and setup information
 	printInstructions()
 	fmt.Printf("\nYou have %d attempts to guess the mystery NBA player!\n", maxAttempts)
+	fmt.Printf("You can use up to %d hints by typing 'hint'.\n", maxHints)
 	fmt.Println("Type 'quit' to exit the game.")
-	fmt.Println("Type 'hint' to get a hint about available players.")
 
 	// Print header row for the comparison results table
 	printHeader()
@@ -56,10 +59,18 @@ func main() {
 			return // Exit the program
 		}
 
-		// Check if user wants to see a hint of available players
+		// Check if user wants to use a hint
 		if strings.ToLower(guess) == "hint" {
-			showPlayerHint() // Display sample of available players
-			continue         // Don't count this as an attempt, go to next iteration
+			if hintsUsed >= maxHints {
+				fmt.Printf("❌ You've already used all %d hints!\n", maxHints)
+				continue // Don't count this as an attempt, go to next iteration
+			}
+
+			// Show a random attribute hint
+			showRandomAttributeHint(target, hintsUsed+1)
+			hintsUsed++
+			fmt.Printf("💡 Hints remaining: %d\n", maxHints-hintsUsed)
+			continue // Don't count this as an attempt, go to next iteration
 		}
 
 		// Search for the guessed player in the database
@@ -67,7 +78,7 @@ func main() {
 		if !found {
 			// Player not found in database - show error and continue without counting attempt
 			fmt.Printf("❌ Player '%s' not found. Please check the spelling.\n", guess)
-			fmt.Println("💡 Tip: Type 'hint' to see some available players")
+			fmt.Printf("💡 Tip: Type 'hint' to get a clue about the mystery player (%d hints remaining)\n", maxHints-hintsUsed)
 			continue // Don't increment attempts counter
 		}
 
@@ -83,6 +94,9 @@ func main() {
 			// Player guessed correctly - show victory message and exit
 			fmt.Printf("\n🎉 CONGRATULATIONS! 🎉\n")
 			fmt.Printf("You guessed correctly in %d attempts!\n", attempts)
+			if hintsUsed > 0 {
+				fmt.Printf("You used %d hint(s) to help you.\n", hintsUsed)
+			}
 			fmt.Printf("The mystery player was: %s\n", target.Name)
 			printPlayerDetails(target) // Show detailed information about the target player
 			return                     // Exit the program
@@ -97,49 +111,126 @@ func main() {
 			return                     // Exit the program
 		}
 
-		// Provide progressive hints based on number of attempts made
-		if attempts == 3 {
-			// After 3 attempts, reveal the player's position
-			fmt.Printf("\n💡 Hint: The player's position is %s\n", target.Position)
-		} else if attempts == 5 {
-			// After 5 attempts, reveal the player's draft year
-			fmt.Printf("💡 Hint: The player was drafted in %d\n", target.DraftYear)
-		} else if attempts == 7 {
-			// After 7 attempts, reveal the player's current team
-			fmt.Printf("💡 Hint: The player's current team is %s\n", target.Team)
+		// Provide name hints at specific attempts
+		if attempts == 4 {
+			// After 4 attempts, reveal first letter of first name and last name
+			nameHint := getNameHint(target.Name, 1) // Get first letter hint
+			fmt.Printf("💡 Hint: The player's name starts with: %s\n", nameHint)
+		} else if attempts == 6 {
+			// After 6 attempts, reveal more of the player's name
+			nameHint := getNameHint(target.Name, 2) // Get more detailed name hint
+			fmt.Printf("💡 Hint: The player's name pattern: %s\n", nameHint)
 		}
 	}
 }
 
-// showPlayerHint displays a random sample of available players to help the user
-func showPlayerHint() {
-	fmt.Println("\n🔍 Here are some available players to help you get started:")
+// showRandomAttributeHint displays a random attribute of the target player
+func showRandomAttributeHint(target Player, hintNumber int) {
+	// Seed random number generator
+	rand.Seed(time.Now().UnixNano())
 
-	// Determine how many players to show (15 or total if less than 15)
-	sampleSize := 15
-	if len(players) < sampleSize {
-		sampleSize = len(players)
+	// List of available attributes to hint about
+	attributes := []string{"team", "position", "height", "college", "draftyear", "draftround", "draftnumber", "jerseynumber", "country"}
+
+	// Select a random attribute
+	selectedAttribute := attributes[rand.Intn(len(attributes))]
+
+	fmt.Printf("💡 Hint #%d: ", hintNumber)
+
+	switch selectedAttribute {
+	case "team":
+		fmt.Printf("The player's current team is: %s\n", target.Team)
+	case "position":
+		fmt.Printf("The player's position is: %s\n", target.Position)
+	case "height":
+		fmt.Printf("The player's height is: %s\n", target.Height)
+	case "college":
+		if target.College == "None" || target.College == "Unknown" {
+			fmt.Printf("The player did not attend college (international or straight from high school)\n")
+		} else {
+			fmt.Printf("The player attended: %s\n", target.College)
+		}
+	case "draftyear":
+		fmt.Printf("The player was drafted in: %d\n", target.DraftYear)
+	case "draftround":
+		if target.DraftRound == 0 {
+			fmt.Printf("The player was undrafted\n")
+		} else {
+			fmt.Printf("The player was drafted in round: %d\n", target.DraftRound)
+		}
+	case "draftnumber":
+		if target.DraftNumber == 0 {
+			fmt.Printf("The player was undrafted (no draft pick number)\n")
+		} else {
+			fmt.Printf("The player was the #%d overall pick\n", target.DraftNumber)
+		}
+	case "jerseynumber":
+		if target.JerseyNumber == "Unknown" {
+			fmt.Printf("The player's jersey number is not available\n")
+		} else {
+			fmt.Printf("The player's jersey number is: #%s\n", target.JerseyNumber)
+		}
+	case "country":
+		fmt.Printf("The player is from: %s\n", target.Country)
+	}
+}
+
+// getNameHint returns a partial hint of the player's name based on the hint level
+func getNameHint(fullName string, hintLevel int) string {
+	// Split the name into parts (first name, last name, etc.)
+	nameParts := strings.Fields(fullName)
+
+	if len(nameParts) == 0 {
+		return "Unknown"
 	}
 
-	// Create slice of indices for all players
-	indices := make([]int, len(players))
-	for i := range indices {
-		indices[i] = i // Fill with sequential numbers 0, 1, 2, ...
-	}
+	switch hintLevel {
+	case 1:
+		// Level 1: Show first letter of each name part
+		var hints []string
+		for _, part := range nameParts {
+			if len(part) > 0 {
+				hints = append(hints, string(part[0])+"_")
+			}
+		}
+		return strings.Join(hints, " ")
 
-	// Shuffle the indices using Fisher-Yates algorithm to get random sample
-	for i := len(indices) - 1; i > 0; i-- {
-		j := rand.Intn(i + 1)                           // Generate random index from 0 to i
-		indices[i], indices[j] = indices[j], indices[i] // Swap elements
-	}
+	case 2:
+		// Level 2: Show first 2-3 letters of each name part and length
+		var hints []string
+		for _, part := range nameParts {
+			if len(part) == 0 {
+				continue
+			}
 
-	// Display the random sample of players
-	for i := 0; i < sampleSize; i++ {
-		fmt.Printf("- %s\n", players[indices[i]].Name)
-	}
+			var hint string
+			if len(part) <= 3 {
+				// For very short names, show first letter only
+				hint = string(part[0]) + strings.Repeat("_", len(part)-1)
+			} else if len(part) <= 5 {
+				// For short names, show first 2 letters
+				hint = part[:2] + strings.Repeat("_", len(part)-2)
+			} else {
+				// For longer names, show first 3 letters
+				hint = part[:3] + strings.Repeat("_", len(part)-3)
+			}
 
-	// Show how many more players are available
-	fmt.Printf("\n... and %d more players in the database!\n", len(players)-sampleSize)
+			// Add length indicator
+			hint += fmt.Sprintf(" (%d letters)", len(part))
+			hints = append(hints, hint)
+		}
+		return strings.Join(hints, " ")
+
+	default:
+		// Default case: just show first letters
+		var hints []string
+		for _, part := range nameParts {
+			if len(part) > 0 {
+				hints = append(hints, string(part[0])+"_")
+			}
+		}
+		return strings.Join(hints, " ")
+	}
 }
 
 // printPlayerDetails displays comprehensive information about a player

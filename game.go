@@ -161,7 +161,7 @@ func printInstructions() {
 
 	// Display information about the player database size
 	fmt.Printf("\nDatabase contains %d NBA players from throughout history!\n", len(players))
-	fmt.Println("Type 'hint' during the game to see some available players.")
+	fmt.Println("Type 'hint' during the game to get clues about the mystery player.")
 
 	// Print decorative separator line
 	fmt.Println(strings.Repeat("=", 80))
