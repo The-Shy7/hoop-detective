@@ -24,12 +24,13 @@ func main() {
 	}
 
 	// Initialize game variables
-	target := getRandomPlayer()           // Select a random player as the mystery player to guess
-	attempts := 0                         // Counter for number of guesses made
-	maxAttempts := 8                      // Maximum number of guesses allowed
-	hintsUsed := 0                        // Counter for number of hints used
-	maxHints := 3                         // Maximum number of hints allowed
-	scanner := bufio.NewScanner(os.Stdin) // Create scanner to read user input from terminal
+	target := getRandomPlayer()                 // Select a random player as the mystery player to guess
+	attempts := 0                               // Counter for number of guesses made
+	maxAttempts := 8                            // Maximum number of guesses allowed
+	hintsUsed := 0                              // Counter for number of hints used
+	maxHints := 3                               // Maximum number of hints allowed
+	usedHintAttributes := make(map[string]bool) // Track which attributes have been revealed
+	scanner := bufio.NewScanner(os.Stdin)       // Create scanner to read user input from terminal
 
 	// Timer setup
 	gameStartTime := time.Now()
@@ -94,10 +95,14 @@ func main() {
 					continue // Don't count this as an attempt, go to next iteration
 				}
 
-				// Show a random attribute hint
-				showRandomAttributeHint(target, hintsUsed+1)
-				hintsUsed++
-				fmt.Printf("💡 Hints remaining: %d\n", maxHints-hintsUsed)
+				// Show a unique random attribute hint
+				hintGiven := showUniqueRandomAttributeHint(target, hintsUsed+1, usedHintAttributes)
+				if hintGiven {
+					hintsUsed++
+					fmt.Printf("💡 Hints remaining: %d\n", maxHints-hintsUsed)
+				} else {
+					fmt.Printf("❌ All available attributes have already been revealed!\n")
+				}
 				continue // Don't count this as an attempt, go to next iteration
 			}
 
@@ -184,16 +189,33 @@ func formatDuration(duration time.Duration) string {
 	return fmt.Sprintf("%d seconds", seconds)
 }
 
-// showRandomAttributeHint displays a random attribute of the target player
-func showRandomAttributeHint(target Player, hintNumber int) {
+// showUniqueRandomAttributeHint displays a unique random attribute of the target player
+// Returns true if a hint was given, false if all attributes have been used
+func showUniqueRandomAttributeHint(target Player, hintNumber int, usedAttributes map[string]bool) bool {
+	// List of all available attributes to hint about
+	allAttributes := []string{"team", "position", "height", "college", "draftyear", "draftround", "draftnumber", "jerseynumber", "country"}
+
+	// Filter out already used attributes
+	var availableAttributes []string
+	for _, attr := range allAttributes {
+		if !usedAttributes[attr] {
+			availableAttributes = append(availableAttributes, attr)
+		}
+	}
+
+	// Check if any attributes are still available
+	if len(availableAttributes) == 0 {
+		return false // No more unique attributes available
+	}
+
 	// Seed random number generator
 	rand.Seed(time.Now().UnixNano())
 
-	// List of available attributes to hint about
-	attributes := []string{"team", "position", "height", "college", "draftyear", "draftround", "draftnumber", "jerseynumber", "country"}
+	// Select a random attribute from available ones
+	selectedAttribute := availableAttributes[rand.Intn(len(availableAttributes))]
 
-	// Select a random attribute
-	selectedAttribute := attributes[rand.Intn(len(attributes))]
+	// Mark this attribute as used
+	usedAttributes[selectedAttribute] = true
 
 	fmt.Printf("💡 Hint #%d: ", hintNumber)
 
@@ -233,6 +255,8 @@ func showRandomAttributeHint(target Player, hintNumber int) {
 	case "country":
 		fmt.Printf("The player is from: %s\n", target.Country)
 	}
+
+	return true // Hint was successfully given
 }
 
 // getNameHint returns a partial hint of the player's name based on the hint level
