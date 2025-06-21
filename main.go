@@ -44,6 +44,7 @@ func main() {
 	fmt.Println("Type 'quit' to exit the game.")
 	fmt.Printf("⏰ Game started at: %s\n", gameStartTime.Format("15:04:05"))
 	fmt.Printf("⏰ Time limit: %s\n", gameEndTime.Format("15:04:05"))
+	fmt.Println("💡 Tip: Player names are case-insensitive (e.g., 'lebron james' works)")
 
 	// Print header row for the comparison results table
 	printHeader()
@@ -106,12 +107,12 @@ func main() {
 				continue // Don't count this as an attempt, go to next iteration
 			}
 
-			// Search for the guessed player in the database
+			// Search for the guessed player in the database (case-insensitive)
 			guessedPlayer, found := findPlayerByName(guess)
 			if !found {
 				// Player not found in database - show error and continue without counting attempt
 				fmt.Printf("❌ Player '%s' not found. Please check the spelling.\n", guess)
-				fmt.Printf("💡 Tip: Type 'hint' to get a clue about the mystery player (%d hints remaining)\n", maxHints-hintsUsed)
+				fmt.Printf("💡 Tip: Names are case-insensitive. Type 'hint' to get a clue (%d hints remaining)\n", maxHints-hintsUsed)
 				continue // Don't increment attempts counter
 			}
 
@@ -122,8 +123,8 @@ func main() {
 			result := compareWithTarget(*guessedPlayer, target)
 			fmt.Println(result) // Print the color-coded comparison results
 
-			// Check if the guess is correct (exact name match)
-			if guessedPlayer.Name == target.Name {
+			// Check if the guess is correct (case-insensitive name match)
+			if strings.ToLower(guessedPlayer.Name) == strings.ToLower(target.Name) {
 				// Player guessed correctly - show victory message and exit
 				elapsedTime := time.Now().Sub(gameStartTime)
 				fmt.Printf("\n🎉 CONGRATULATIONS! 🎉\n")

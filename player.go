@@ -2,6 +2,7 @@ package main
 
 import (
 	"math/rand" // Package for generating random numbers
+	"strings"   // Package for string manipulation functions
 	"time"      // Package for time-related operations
 )
 
@@ -51,16 +52,36 @@ func getRandomPlayer() Player {
 	return players[rand.Intn(len(players))]
 }
 
-// findPlayerByName searches for a player by exact name match
+// findPlayerByName searches for a player by case-insensitive name match
 // Returns pointer to player and boolean indicating if found
 func findPlayerByName(name string) (*Player, bool) {
+	// Convert input name to lowercase for case-insensitive comparison
+	lowerName := strings.ToLower(strings.TrimSpace(name))
+
 	// Iterate through all players in the database
 	for _, player := range players {
-		// Check for exact name match (case-sensitive)
-		if player.Name == name {
+		// Check for case-insensitive name match
+		if strings.ToLower(player.Name) == lowerName {
 			return &player, true // Return pointer to player and true if found
 		}
 	}
+
+	// If exact match not found, try partial matching for common variations
+	for _, player := range players {
+		playerLower := strings.ToLower(player.Name)
+
+		// Check if the input matches any part of the player's name (for nicknames or partial names)
+		if strings.Contains(playerLower, lowerName) && len(lowerName) >= 3 {
+			// Only match if the input is at least 3 characters to avoid too many false positives
+			return &player, true
+		}
+
+		// Check if player name contains the input (reverse check for partial matches)
+		if strings.Contains(lowerName, playerLower) && len(playerLower) >= 3 {
+			return &player, true
+		}
+	}
+
 	// Return nil pointer and false if player not found
 	return nil, false
 }
