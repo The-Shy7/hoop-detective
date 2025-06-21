@@ -155,13 +155,15 @@ func printInstructions() {
 	// Print game rules and instructions
 	fmt.Println("\nHow to play:")
 	fmt.Println("- Guess NBA players by typing their full name")
+	fmt.Println("- You have 8 attempts and 6 minutes to guess correctly")
 	fmt.Println("- 🟢 Green = Exact match")
 	fmt.Println("- 🟡 Yellow = Close match (within range for numbers)")
 	fmt.Println("- 🔴 Red = No match")
 
 	// Display information about the player database size
 	fmt.Printf("\nDatabase contains %d NBA players from throughout history!\n", len(players))
-	fmt.Println("Type 'hint' during the game to get clues about the mystery player.")
+	fmt.Println("Type 'hint' during the game to get clues about the mystery player (limited to 3 hints).")
+	fmt.Println("⏰ Race against time - you only have 6 minutes!")
 
 	// Print decorative separator line
 	fmt.Println(strings.Repeat("=", 80))

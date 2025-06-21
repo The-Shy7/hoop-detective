@@ -31,97 +31,157 @@ func main() {
 	maxHints := 3                         // Maximum number of hints allowed
 	scanner := bufio.NewScanner(os.Stdin) // Create scanner to read user input from terminal
 
+	// Timer setup
+	gameStartTime := time.Now()
+	gameDuration := 6 * time.Minute // 6 minutes total
+	gameEndTime := gameStartTime.Add(gameDuration)
+
 	// Print game instructions and setup information
 	printInstructions()
-	fmt.Printf("\nYou have %d attempts to guess the mystery NBA player!\n", maxAttempts)
+	fmt.Printf("\nYou have %d attempts and 6 minutes to guess the mystery NBA player!\n", maxAttempts)
 	fmt.Printf("You can use up to %d hints by typing 'hint'.\n", maxHints)
 	fmt.Println("Type 'quit' to exit the game.")
+	fmt.Printf("⏰ Game started at: %s\n", gameStartTime.Format("15:04:05"))
+	fmt.Printf("⏰ Time limit: %s\n", gameEndTime.Format("15:04:05"))
 
 	// Print header row for the comparison results table
 	printHeader()
 
-	// Main game loop - continues until max attempts reached or player guesses correctly
+	// Main game loop - continues until max attempts reached, time runs out, or player guesses correctly
 	for attempts < maxAttempts {
-		// Display current attempt number and prompt for user input
-		fmt.Printf("\nAttempt %d/%d - Enter your guess: ", attempts+1, maxAttempts)
-
-		// Read user input from terminal
-		if !scanner.Scan() {
-			break // Exit if there's an error reading input
+		// Check if time has run out
+		currentTime := time.Now()
+		if currentTime.After(gameEndTime) {
+			fmt.Printf("\n⏰ TIME'S UP! You ran out of time after %s.\n", formatDuration(currentTime.Sub(gameStartTime)))
+			fmt.Printf("The mystery player was: %s\n", target.Name)
+			printPlayerDetails(target)
+			return
 		}
 
-		// Get the user's guess and remove leading/trailing whitespace
-		guess := strings.TrimSpace(scanner.Text())
+		// Calculate and display remaining time
+		timeRemaining := gameEndTime.Sub(currentTime)
 
-		// Check if user wants to quit the game
-		if strings.ToLower(guess) == "quit" {
-			fmt.Println("\nThanks for playing! The mystery player was:", target.Name)
-			return // Exit the program
-		}
+		// Display current attempt number, time remaining, and prompt for user input
+		fmt.Printf("\nAttempt %d/%d - Time remaining: %s - Enter your guess: ",
+			attempts+1, maxAttempts, formatTimeRemaining(timeRemaining))
 
-		// Check if user wants to use a hint
-		if strings.ToLower(guess) == "hint" {
-			if hintsUsed >= maxHints {
-				fmt.Printf("❌ You've already used all %d hints!\n", maxHints)
+		// Read user input from terminal with timeout handling
+		inputChan := make(chan string, 1)
+		go func() {
+			if scanner.Scan() {
+				inputChan <- scanner.Text()
+			} else {
+				inputChan <- ""
+			}
+		}()
+
+		// Wait for input or timeout
+		select {
+		case guess := <-inputChan:
+			// Process the user's input
+			guess = strings.TrimSpace(guess)
+
+			// Check if user wants to quit the game
+			if strings.ToLower(guess) == "quit" {
+				fmt.Println("\nThanks for playing! The mystery player was:", target.Name)
+				return // Exit the program
+			}
+
+			// Check if user wants to use a hint
+			if strings.ToLower(guess) == "hint" {
+				if hintsUsed >= maxHints {
+					fmt.Printf("❌ You've already used all %d hints!\n", maxHints)
+					continue // Don't count this as an attempt, go to next iteration
+				}
+
+				// Show a random attribute hint
+				showRandomAttributeHint(target, hintsUsed+1)
+				hintsUsed++
+				fmt.Printf("💡 Hints remaining: %d\n", maxHints-hintsUsed)
 				continue // Don't count this as an attempt, go to next iteration
 			}
 
-			// Show a random attribute hint
-			showRandomAttributeHint(target, hintsUsed+1)
-			hintsUsed++
-			fmt.Printf("💡 Hints remaining: %d\n", maxHints-hintsUsed)
-			continue // Don't count this as an attempt, go to next iteration
-		}
-
-		// Search for the guessed player in the database
-		guessedPlayer, found := findPlayerByName(guess)
-		if !found {
-			// Player not found in database - show error and continue without counting attempt
-			fmt.Printf("❌ Player '%s' not found. Please check the spelling.\n", guess)
-			fmt.Printf("💡 Tip: Type 'hint' to get a clue about the mystery player (%d hints remaining)\n", maxHints-hintsUsed)
-			continue // Don't increment attempts counter
-		}
-
-		// Increment attempts counter since we have a valid guess
-		attempts++
-
-		// Compare the guessed player with the target player and display results
-		result := compareWithTarget(*guessedPlayer, target)
-		fmt.Println(result) // Print the color-coded comparison results
-
-		// Check if the guess is correct (exact name match)
-		if guessedPlayer.Name == target.Name {
-			// Player guessed correctly - show victory message and exit
-			fmt.Printf("\n🎉 CONGRATULATIONS! 🎉\n")
-			fmt.Printf("You guessed correctly in %d attempts!\n", attempts)
-			if hintsUsed > 0 {
-				fmt.Printf("You used %d hint(s) to help you.\n", hintsUsed)
+			// Search for the guessed player in the database
+			guessedPlayer, found := findPlayerByName(guess)
+			if !found {
+				// Player not found in database - show error and continue without counting attempt
+				fmt.Printf("❌ Player '%s' not found. Please check the spelling.\n", guess)
+				fmt.Printf("💡 Tip: Type 'hint' to get a clue about the mystery player (%d hints remaining)\n", maxHints-hintsUsed)
+				continue // Don't increment attempts counter
 			}
-			fmt.Printf("The mystery player was: %s\n", target.Name)
-			printPlayerDetails(target) // Show detailed information about the target player
-			return                     // Exit the program
-		}
 
-		// Check if player has used all attempts
-		if attempts == maxAttempts {
-			// Game over - show failure message and reveal answer
-			fmt.Printf("\n💔 Game Over! You've used all %d attempts.\n", maxAttempts)
-			fmt.Printf("The mystery player was: %s\n", target.Name)
-			printPlayerDetails(target) // Show detailed information about the target player
-			return                     // Exit the program
-		}
+			// Increment attempts counter since we have a valid guess
+			attempts++
 
-		// Provide name hints at specific attempts
-		if attempts == 4 {
-			// After 4 attempts, reveal first letter of first name and last name
-			nameHint := getNameHint(target.Name, 1) // Get first letter hint
-			fmt.Printf("💡 Hint: The player's name starts with: %s\n", nameHint)
-		} else if attempts == 6 {
-			// After 6 attempts, reveal more of the player's name
-			nameHint := getNameHint(target.Name, 2) // Get more detailed name hint
-			fmt.Printf("💡 Hint: The player's name pattern: %s\n", nameHint)
+			// Compare the guessed player with the target player and display results
+			result := compareWithTarget(*guessedPlayer, target)
+			fmt.Println(result) // Print the color-coded comparison results
+
+			// Check if the guess is correct (exact name match)
+			if guessedPlayer.Name == target.Name {
+				// Player guessed correctly - show victory message and exit
+				elapsedTime := time.Now().Sub(gameStartTime)
+				fmt.Printf("\n🎉 CONGRATULATIONS! 🎉\n")
+				fmt.Printf("You guessed correctly in %d attempts and %s!\n", attempts, formatDuration(elapsedTime))
+				if hintsUsed > 0 {
+					fmt.Printf("You used %d hint(s) to help you.\n", hintsUsed)
+				}
+				fmt.Printf("The mystery player was: %s\n", target.Name)
+				printPlayerDetails(target) // Show detailed information about the target player
+				return                     // Exit the program
+			}
+
+			// Check if player has used all attempts
+			if attempts == maxAttempts {
+				// Game over - show failure message and reveal answer
+				elapsedTime := time.Now().Sub(gameStartTime)
+				fmt.Printf("\n💔 Game Over! You've used all %d attempts in %s.\n", maxAttempts, formatDuration(elapsedTime))
+				fmt.Printf("The mystery player was: %s\n", target.Name)
+				printPlayerDetails(target) // Show detailed information about the target player
+				return                     // Exit the program
+			}
+
+			// Provide name hints at specific attempts
+			if attempts == 4 {
+				// After 4 attempts, reveal first letter of first name and last name
+				nameHint := getNameHint(target.Name, 1) // Get first letter hint
+				fmt.Printf("💡 Hint: The player's name starts with: %s\n", nameHint)
+			} else if attempts == 6 {
+				// After 6 attempts, reveal more of the player's name
+				nameHint := getNameHint(target.Name, 2) // Get more detailed name hint
+				fmt.Printf("💡 Hint: The player's name pattern: %s\n", nameHint)
+			}
+
+		case <-time.After(time.Until(gameEndTime)):
+			// Time ran out while waiting for input
+			fmt.Printf("\n⏰ TIME'S UP! You ran out of time.\n")
+			fmt.Printf("The mystery player was: %s\n", target.Name)
+			printPlayerDetails(target)
+			return
 		}
 	}
+}
+
+// formatTimeRemaining formats the remaining time in a user-friendly way
+func formatTimeRemaining(duration time.Duration) string {
+	minutes := int(duration.Minutes())
+	seconds := int(duration.Seconds()) % 60
+
+	if minutes > 0 {
+		return fmt.Sprintf("%dm %ds", minutes, seconds)
+	}
+	return fmt.Sprintf("%ds", seconds)
+}
+
+// formatDuration formats elapsed time in a user-friendly way
+func formatDuration(duration time.Duration) string {
+	minutes := int(duration.Minutes())
+	seconds := int(duration.Seconds()) % 60
+
+	if minutes > 0 {
+		return fmt.Sprintf("%d minutes %d seconds", minutes, seconds)
+	}
+	return fmt.Sprintf("%d seconds", seconds)
 }
 
 // showRandomAttributeHint displays a random attribute of the target player
